@@ -674,6 +674,7 @@ class LarkMessageCenter {
           chat_type: this.message.chat_type,
           message_id: this.message.message_id,
           content: content ?? this.message.content,
+          mentions: this.mentions,
           message_type: "text"
         },
         sender: this.params.event.sender
