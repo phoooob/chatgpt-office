@@ -29,9 +29,7 @@ export default class LarkMessageCenter implements MessageCenter {
     }
 
     get sessionId() {
-        const chatId = this.params.event.message.chat_id;
-        const senderId = this.params.event.sender.sender_id.user_id;
-        return `${chatId}_${senderId}`;
+        return this.params.event.message.chat_id;
     }
 
     get content() {
