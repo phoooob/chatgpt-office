@@ -34,8 +34,12 @@ npm run build:feishu
 | POST_URL | 飞书消息交互行为回调地址，与飞书服务器回调地址一致 |
 
 ### 写在最后
-如果该项目对您有所帮助，欢迎通过`issue`提出更多的想法和建议，欢迎打赏，总之非常感谢~~
+如果该项目对您有所帮助，欢迎通过`issue`提出更多的想法和建议~~
 
-<img src="./public/wxpay.jpg" width="200"/> <img src="./public/alipay.jpg" width="200" style="margin-left:20px"/>
+### 附录：架构设计图
+
+<img src="./public/design.jpg" width="1000"/>
+
+
 
 
