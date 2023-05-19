@@ -104,6 +104,17 @@ export interface StorageManager {
      * 定时清理事件数据
      */
     clearEventData(): Promise<void>;
+
+    /**
+     * 根据提示词标题获取内容
+     */
+    findPromptByTitle(title: string): Promise<PromptData>;
+}
+
+export interface PromptData {
+    title: string;
+    prompt: string;
+    id?: string;
 }
 
 export interface MessageData {

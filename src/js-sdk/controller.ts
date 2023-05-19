@@ -58,9 +58,20 @@ export default class Controller {
         }
     }
 
+    private async transformByPrompt(question: string) {
+        const matches = question.match(/^#(.+?)\s(.*)/);
+        if (!matches) return question;
+        const title = matches[1];
+        const rest = matches[2];
+        if (!rest) return question;
+        const data = await this.storage.findPromptByTitle(title);
+        if (!data) return question;
+        return data.prompt.replace('{content}', rest);
+    }
+
     private async sendAIMessage() {
         const sessionId = this.messageCenter.sessionId;
-        const question = this.messageCenter.content;
+        const question = await this.transformByPrompt(this.messageCenter.content);
         //历史记录
         const historyList = await this.storage.findMessagesBySessionId(sessionId);
 

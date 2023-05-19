@@ -1,9 +1,10 @@
 import { logger } from '@/js-sdk/lib/logger';
-import { MessageData, StorageManager } from '@/js-sdk/typings';
+import { MessageData, PromptData, StorageManager } from '@/js-sdk/typings';
 
 const { db } = require('aircode');
 const MessageDB = db.table('t_message');
 const EventDB = db.table('t_event');
+const PromptDB = db.table('t_prompt');
 
 export default class AirCodeStorage implements StorageManager {
     async clearAllBySessionId(sessionId: string) {
@@ -34,5 +35,9 @@ export default class AirCodeStorage implements StorageManager {
         return await EventDB.where({
             createdAt: db.lt(from)
         }).delete();
+    }
+
+    async findPromptByTitle(title: string): Promise<PromptData> {
+        return await PromptDB.where({ title }).findOne();
     }
 }

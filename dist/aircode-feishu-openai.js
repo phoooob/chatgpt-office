@@ -36,6 +36,7 @@ function success(message) {
 const { db } = require("aircode");
 const MessageDB = db.table("t_message");
 const EventDB = db.table("t_event");
+const PromptDB = db.table("t_prompt");
 class AirCodeStorage {
   async clearAllBySessionId(sessionId) {
     return await MessageDB.where({ sessionId }).delete();
@@ -62,6 +63,9 @@ class AirCodeStorage {
     return await EventDB.where({
       createdAt: db.lt(from)
     }).delete();
+  }
+  async findPromptByTitle(title) {
+    return await PromptDB.where({ title }).findOne();
   }
 }
 const FEISHU_APP_ID = process.env.FEISHU_APP_ID || "";
@@ -115,9 +119,22 @@ class Controller {
       console.log(`ID:onMessage，error：`, error);
     }
   }
+  async transformByPrompt(question) {
+    const matches = question.match(/^#(.+?)\s(.*)/);
+    if (!matches)
+      return question;
+    const title = matches[1];
+    const rest = matches[2];
+    if (!rest)
+      return question;
+    const data = await this.storage.findPromptByTitle(title);
+    if (!data)
+      return question;
+    return data.prompt.replace("{content}", rest);
+  }
   async sendAIMessage() {
     const sessionId = this.messageCenter.sessionId;
-    const question = this.messageCenter.content;
+    const question = await this.transformByPrompt(this.messageCenter.content);
     const historyList = await this.storage.findMessagesBySessionId(sessionId);
     const title = `本轮会话第${historyList.length + 1}回合`;
     await Promise.all([
@@ -631,9 +648,7 @@ class LarkMessageCenter {
     return this.message.message_id;
   }
   get sessionId() {
-    const chatId = this.params.event.message.chat_id;
-    const senderId = this.params.event.sender.sender_id.user_id;
-    return `${chatId}_${senderId}`;
+    return this.params.event.message.chat_id;
   }
   get content() {
     const data = JSON.parse(this.message.content);
