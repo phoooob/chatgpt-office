@@ -39,7 +39,3 @@ npm run build:feishu
 ### 附录：架构设计图
 
 <img src="./public/design.jpg" width="1000"/>
-
-
-
-
