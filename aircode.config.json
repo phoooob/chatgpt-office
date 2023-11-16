@@ -1,0 +1,27 @@
+{
+  "name": "FeiShu",
+  "runtime": "node/v16",
+  "region": "HK",
+  "envs": [
+    "FEISHU_APP_ID",
+    "FEISHU_APP_SECRET",
+    "FEISHU_BOT_NAME",
+    "OPENAI_API_MODEL",
+    "OPENAI_MODEL_MAX_TOKEN",
+    "POST_URL",
+    "OPENAI_API_KEY"
+  ],
+  "typescript": false,
+  "cronjobs": [
+    {
+      "name": "ClearEventData",
+      "startTime": 1683195540,
+      "endTime": 0,
+      "functions": [
+        "feishu-chat.js"
+      ],
+      "repeatType": "day",
+      "repeatInterval": 1
+    }
+  ]
+}

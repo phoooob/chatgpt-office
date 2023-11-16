@@ -6,7 +6,6 @@ var __publicField = (obj, key, value) => {
   return value;
 };
 const axios = require("axios");
-const OpenAI = require("openai");
 function logger(msg, data) {
   console.log(msg, data);
 }
@@ -137,18 +136,15 @@ class Controller {
     const sessionId = this.messageCenter.sessionId;
     const question = await this.transformByPrompt(this.messageCenter.content);
     const historyList = await this.storage.findMessagesBySessionId(sessionId);
-    const repeatLast = await this.sendRepeatMessage(historyList, question);
     const title = `本轮会话第${historyList.length + 1}回合`;
-    if (!repeatLast) {
-      await Promise.all([
-        this.messageCenter.sendUniqueCardMessage({
-          title,
-          content: "思考中，请稍候…",
-          throttle: false
-        }),
-        this.finishLastState(historyList[historyList.length - 1])
-      ]);
-    }
+    await Promise.all([
+      this.messageCenter.sendUniqueCardMessage({
+        title,
+        content: "思考中，请稍候…",
+        throttle: false
+      }),
+      this.finishLastState(historyList[historyList.length - 1])
+    ]);
     await this.ai.getAnswer(historyList, question, async (data) => {
       if (!data.content && !data.finished)
         return;
@@ -157,6 +153,7 @@ class Controller {
         await this.messageCenter.sendUniqueCardMessage({ title, content, throttle: true });
         return;
       }
+      console.log(`ID:102，data.fullContent：`, content);
       await this.messageCenter.sendUniqueCardMessage({
         title,
         content,
@@ -182,7 +179,6 @@ class Controller {
       });
       if (!data.isError) {
         await this.storage.saveMessage({
-          _id: repeatLast == null ? void 0 : repeatLast._id,
           sessionId: this.messageCenter.sessionId,
           question,
           answer: data.fullContent,
@@ -192,27 +188,6 @@ class Controller {
       }
     });
   }
-  async sendRepeatMessage(historyList, question) {
-    const repeatLast = this.findRepeatLast(historyList, question);
-    if (!repeatLast)
-      return null;
-    this.messageCenter.setCardMessageId(repeatLast.cardMessageId);
-    historyList.pop();
-    const title = `本轮会话第${historyList.length + 1}回合`;
-    await this.messageCenter.sendUniqueCardMessage({
-      title,
-      content: "思考中，请稍候…",
-      throttle: false
-    });
-    return repeatLast;
-  }
-  findRepeatLast(historyList, question) {
-    const last = historyList[historyList.length - 1];
-    return !last || last.question !== question ? void 0 : last;
-  }
-  /**
-   * 隐藏最后一次会话按钮
-   */
   async finishLastState(last) {
     if (!(last == null ? void 0 : last.cardMessageId))
       return;
@@ -221,9 +196,6 @@ class Controller {
       content: last.answer
     });
   }
-  /**
-   * 结束上一轮对话，开始新的对话
-   */
   async end() {
     const sessionId = this.messageCenter.sessionId;
     const last = await this.storage.findLastMessagesBySessionId(sessionId);
@@ -255,60 +227,40 @@ function countTokenByPrompts(prompts) {
     return total;
   }, 0);
 }
-const openai$1 = new OpenAI({
-  apiKey: OPENAI_API_KEY
-});
+function getMaxTokenByPrompts(prompts) {
+  const totalTokens = countTokenByPrompts(prompts);
+  return OPENAI_MODEL_MAX_TOKEN - totalTokens - 10;
+}
+const { Configuration, OpenAIApi } = require("openai");
+let openai$1 = null;
 function useOpenAI() {
+  if (!openai$1) {
+    const configuration = new Configuration({
+      apiKey: OPENAI_API_KEY
+    });
+    openai$1 = new OpenAIApi(configuration);
+  }
   return openai$1;
 }
 const openai = useOpenAI();
 class Openai {
-  /**
-   * 创建会话消息
-   */
   async getAnswer(historyList, content, onProgress) {
     try {
-      const messages = this.createFullPrompts(historyList, content);
-      const max_tokens = OPENAI_MODEL_MAX_TOKEN;
+      const messages = this.createPrompts(historyList, content);
+      const max_tokens = getMaxTokenByPrompts(messages);
       const option = {
         model: OPENAI_API_MODEL,
         messages,
-        stream: true,
         max_tokens,
+        stream: true,
         temperature: 0.8
       };
       logger(`ID:30，option：`, option);
-      const stream = await openai.chat.completions.create(option);
-      const contents = [];
-      let preLength = -7;
-      let preContent = "";
-      for await (const resultData of stream) {
-        try {
-          const { delta, finish_reason } = resultData.choices[0];
-          const suffix = this.getSuffix(finish_reason);
-          const curContent = `${delta.content ? delta.content : ""}${suffix ? suffix : ""}`;
-          if (curContent)
-            contents.push(curContent);
-          if (preLength + 10 < contents.length) {
-            const fullContent2 = contents.join("");
-            onProgress({
-              finished: false,
-              content: fullContent2.replace(preContent, ""),
-              fullContent: fullContent2
-            });
-            preContent = contents.join("");
-            preLength = contents.length;
-          }
-        } catch (error) {
-          console.error("Could not JSON parse stream message", resultData, error);
-        }
-      }
-      const fullContent = contents.join("");
-      onProgress({
-        finished: true,
-        content: fullContent.replace(preContent, ""),
-        fullContent
+      const res = await openai.createChatCompletion(option, {
+        timeout: 2e4,
+        responseType: "stream"
       });
+      await this.readStream(res, onProgress);
     } catch (error) {
       const errorMsg = await this.onStreamError(error);
       onProgress({
@@ -319,6 +271,45 @@ class Openai {
       });
       return Promise.reject(errorMsg);
     }
+  }
+  readStream(res, onProgress) {
+    let resultData;
+    const contents = [];
+    return new Promise((resolve, reject) => {
+      res.data.on("data", (data) => {
+        let lines = data.toString().split("\n");
+        lines = lines.filter((line) => line.trim() !== "");
+        for (const line of lines) {
+          const message = line.replace(/^data: /, "");
+          if (message === "[DONE]") {
+            break;
+          }
+          try {
+            resultData = JSON.parse(message);
+            const { delta, finish_reason } = resultData.choices[0];
+            const suffix = this.getSuffix(finish_reason);
+            if (delta.content || suffix) {
+              contents.push(`${delta.content ? delta.content : ""}${suffix ? suffix : ""}`);
+              onProgress({
+                finished: false,
+                content: delta.content,
+                fullContent: contents.join("")
+              });
+            }
+          } catch (error) {
+            console.error("Could not JSON parse stream message", message, error);
+          }
+        }
+      });
+      res.data.on("end", () => {
+        onProgress({
+          finished: true,
+          content: "",
+          fullContent: contents.join("")
+        });
+        resolve({ ...resultData, message: contents.join("") });
+      });
+    });
   }
   onStreamError(error) {
     return new Promise((resolve, reject) => {
@@ -550,9 +541,6 @@ class LarkCardMessage {
       return await this.updateCardMessage(option);
     }
   }
-  /**
-   * 卡片消息
-   */
   async replyCardMessage(option) {
     if (!option.content)
       return;
@@ -708,9 +696,6 @@ class LarkMessageCenter {
       }
     };
   }
-  /**
-   * 回复文本消息
-   */
   async replyTextMessage(text) {
     try {
       return await client.im.message.reply({
@@ -726,9 +711,6 @@ class LarkMessageCenter {
       logger("发送飞书消息发生错误：", { e, params: this.params, text });
     }
   }
-  /**
-   * 发送文本消息
-   */
   async sendTextMessage(text) {
     try {
       return await client.im.message.create({
@@ -754,9 +736,6 @@ class LarkMessageCenter {
   }
   get cardMessageId() {
     return this.larkCardMessage.cardMessageId;
-  }
-  setCardMessageId(cardMessageId) {
-    this.larkCardMessage.cardMessageId = cardMessageId;
   }
 }
 async function aircodeFeishuOpenai(params, context) {

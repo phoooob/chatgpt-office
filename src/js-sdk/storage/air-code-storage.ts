@@ -1,4 +1,3 @@
-import { logger } from '@/js-sdk/lib/logger';
 import { MessageData, PromptData, StorageManager } from '@/js-sdk/typings';
 
 const { db } = require('aircode');

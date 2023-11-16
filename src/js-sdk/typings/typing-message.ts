@@ -39,6 +39,11 @@ export interface MessageCenter {
     onCardMessageCommand(params: CardParams): Promise<{ type: 'end' | 'onMessage'; data: any }>;
 
     /**
+     * 设置消息ID
+     */
+    setCardMessageId(cardMessageId: string): void;
+
+    /**
      * 是否为没有@机器人的群消息
      */
     get notMentionedGroupMessage(): boolean;

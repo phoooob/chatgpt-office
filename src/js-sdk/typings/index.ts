@@ -126,7 +126,7 @@ export interface MessageData {
     completionTokens?: number;
     totalTokens?: number;
     sort?: number;
-    id?: string;
+    _id?: string;
 }
 
 export interface CompletionResult {

@@ -1,6 +1,6 @@
 import { OPENAI_API_MODEL, OPENAI_MODEL_MAX_TOKEN } from '@/js-sdk/config';
 import { logger } from '@/js-sdk/lib/logger';
-import { countTokenByPrompts, getMaxTokenByPrompts } from '@/js-sdk/ai/openai/openai-token-counter';
+import { countTokenByPrompts } from '@/js-sdk/ai/openai/openai-token-counter';
 import { AI, MessageData, OnProgress } from '@/js-sdk/typings';
 import { Roles } from '@/js-sdk/enums';
 import useOpenAI from '@/js-sdk/ai/openai/openai-client';
@@ -13,22 +13,53 @@ export default class Openai implements AI {
      */
     async getAnswer(historyList: Array<MessageData>, content: string, onProgress: OnProgress): Promise<void> {
         try {
-            const messages = this.createPrompts(historyList, content);
-            const max_tokens = getMaxTokenByPrompts(messages);
+            const messages = this.createFullPrompts(historyList, content);
+            const max_tokens = OPENAI_MODEL_MAX_TOKEN;
             const option = {
                 model: OPENAI_API_MODEL,
                 messages,
-                max_tokens,
                 stream: true,
+                max_tokens,
                 temperature: 0.8
             };
             logger(`ID:30，option：`, option);
-            const res = await openai.createChatCompletion(option, {
-                timeout: 20000,
-                responseType: 'stream'
+
+            const stream = await openai.chat.completions.create(option);
+
+            //读取流数据
+            const contents = [];
+            let preLength = -7;
+            let preContent = '';
+            //@ts-ignore
+            for await (const resultData of stream) {
+                try {
+                    const { delta, finish_reason } = resultData.choices[0];
+                    const suffix = this.getSuffix(finish_reason);
+                    const curContent = `${delta.content ? delta.content : ''}${suffix ? suffix : ''}`;
+                    if (curContent) contents.push(curContent);
+                    if (preLength + 10 < contents.length) {
+                        const fullContent = contents.join('');
+                        onProgress({
+                            finished: false,
+                            content: fullContent.replace(preContent, ''),
+                            fullContent
+                        });
+
+                        preContent = contents.join('');
+                        preLength = contents.length;
+                    }
+                } catch (error) {
+                    console.error('Could not JSON parse stream message', resultData, error);
+                }
+            }
+
+            //结束
+            const fullContent = contents.join('');
+            onProgress({
+                finished: true,
+                content: fullContent.replace(preContent, ''),
+                fullContent
             });
-            await this.readStream(res, onProgress);
-            //TODO 返回本地的结果完整数据
         } catch (error) {
             const errorMsg = await this.onStreamError(error);
             onProgress({
@@ -39,47 +70,6 @@ export default class Openai implements AI {
             });
             return Promise.reject(errorMsg);
         }
-    }
-
-    private readStream(res, onProgress: OnProgress) {
-        let resultData: any;
-        const contents = [];
-        return new Promise((resolve, reject) => {
-            res.data.on('data', data => {
-                let lines = data.toString().split('\n');
-                lines = lines.filter(line => line.trim() !== '');
-                for (const line of lines) {
-                    const message = line.replace(/^data: /, '');
-                    if (message === '[DONE]') {
-                        break;
-                    }
-                    try {
-                        resultData = JSON.parse(message);
-                        const { delta, finish_reason } = resultData.choices[0];
-                        const suffix = this.getSuffix(finish_reason);
-                        if (delta.content || suffix) {
-                            contents.push(`${delta.content ? delta.content : ''}${suffix ? suffix : ''}`);
-                            onProgress({
-                                finished: false,
-                                content: delta.content,
-                                fullContent: contents.join('')
-                            });
-                        }
-                    } catch (error) {
-                        console.error('Could not JSON parse stream message', message, error);
-                    }
-                }
-            });
-
-            res.data.on('end', () => {
-                onProgress({
-                    finished: true,
-                    content: '',
-                    fullContent: contents.join('')
-                });
-                resolve({ ...resultData, message: contents.join('') });
-            });
-        });
     }
 
     private onStreamError(error): Promise<string> {

@@ -72,19 +72,25 @@ export default class Controller {
     private async sendAIMessage() {
         const sessionId = this.messageCenter.sessionId;
         const question = await this.transformByPrompt(this.messageCenter.content);
+
         //历史记录
         const historyList = await this.storage.findMessagesBySessionId(sessionId);
 
+        //判定是否为重新回答问题
+        const repeatLast = await this.sendRepeatMessage(historyList, question);
+
         //取消最后一次会话的按钮
         const title = `本轮会话第${historyList.length + 1}回合`;
-        await Promise.all([
-            this.messageCenter.sendUniqueCardMessage({
-                title,
-                content: '思考中，请稍候…',
-                throttle: false
-            }),
-            this.finishLastState(historyList[historyList.length - 1])
-        ]);
+        if (!repeatLast) {
+            await Promise.all([
+                this.messageCenter.sendUniqueCardMessage({
+                    title,
+                    content: '思考中，请稍候…',
+                    throttle: false
+                }),
+                this.finishLastState(historyList[historyList.length - 1])
+            ]);
+        }
 
         const res = await this.ai.getAnswer(historyList, question, async data => {
             if (!data.content && !data.finished) return;
@@ -96,7 +102,6 @@ export default class Controller {
             }
 
             //发送最终的结果
-            console.log(`ID:102，data.fullContent：`, content);
             await this.messageCenter.sendUniqueCardMessage({
                 title,
                 content,
@@ -124,6 +129,7 @@ export default class Controller {
             //存储答案
             if (!data.isError) {
                 await this.storage.saveMessage({
+                    _id: repeatLast?._id,
                     sessionId: this.messageCenter.sessionId,
                     question,
                     answer: data.fullContent,
@@ -132,6 +138,33 @@ export default class Controller {
                 });
             }
         });
+    }
+
+    private async sendRepeatMessage(historyList: MessageData[], question: string): Promise<MessageData> {
+        //判定是否为重新回答问题
+        const repeatLast = this.findRepeatLast(historyList, question);
+        if (!repeatLast) return null;
+
+        //继续更新之前的卡片
+        this.messageCenter.setCardMessageId(repeatLast.cardMessageId);
+
+        //删除最新的消息记录
+        historyList.pop();
+
+        //取消最后一次会话的按钮
+        const title = `本轮会话第${historyList.length + 1}回合`;
+        await this.messageCenter.sendUniqueCardMessage({
+            title,
+            content: '思考中，请稍候…',
+            throttle: false
+        });
+
+        return repeatLast;
+    }
+
+    private findRepeatLast(historyList: MessageData[], question: string) {
+        const last = historyList[historyList.length - 1];
+        return !last || last.question !== question ? undefined : last;
     }
 
     /**

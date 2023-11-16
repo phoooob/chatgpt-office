@@ -134,4 +134,8 @@ export default class LarkMessageCenter implements MessageCenter {
     get cardMessageId() {
         return this.larkCardMessage.cardMessageId;
     }
+
+    setCardMessageId(cardMessageId: string) {
+        this.larkCardMessage.cardMessageId = cardMessageId;
+    }
 }
