@@ -280,7 +280,6 @@ class Openai {
       logger(`ID:30，option：`, option);
       const stream = await openai.chat.completions.create(option);
       const contents = [];
-      let preLength = -7;
       let preContent = "";
       for await (const resultData of stream) {
         try {
@@ -289,16 +288,13 @@ class Openai {
           const curContent = `${delta.content ? delta.content : ""}${suffix ? suffix : ""}`;
           if (curContent)
             contents.push(curContent);
-          if (preLength + 10 < contents.length) {
-            const fullContent2 = contents.join("");
-            onProgress({
-              finished: false,
-              content: fullContent2.replace(preContent, ""),
-              fullContent: fullContent2
-            });
-            preContent = contents.join("");
-            preLength = contents.length;
-          }
+          const fullContent2 = contents.join("");
+          onProgress({
+            finished: false,
+            content: fullContent2.replace(preContent, ""),
+            fullContent: fullContent2
+          });
+          preContent = contents.join("");
         } catch (error) {
           console.error("Could not JSON parse stream message", resultData, error);
         }

@@ -28,7 +28,6 @@ export default class Openai implements AI {
 
             //读取流数据
             const contents = [];
-            let preLength = -7;
             let preContent = '';
             //@ts-ignore
             for await (const resultData of stream) {
@@ -37,17 +36,14 @@ export default class Openai implements AI {
                     const suffix = this.getSuffix(finish_reason);
                     const curContent = `${delta.content ? delta.content : ''}${suffix ? suffix : ''}`;
                     if (curContent) contents.push(curContent);
-                    if (preLength + 10 < contents.length) {
-                        const fullContent = contents.join('');
-                        onProgress({
-                            finished: false,
-                            content: fullContent.replace(preContent, ''),
-                            fullContent
-                        });
+                    const fullContent = contents.join('');
+                    onProgress({
+                        finished: false,
+                        content: fullContent.replace(preContent, ''),
+                        fullContent
+                    });
 
-                        preContent = contents.join('');
-                        preLength = contents.length;
-                    }
+                    preContent = contents.join('');
                 } catch (error) {
                     console.error('Could not JSON parse stream message', resultData, error);
                 }
